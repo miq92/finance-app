@@ -247,29 +247,43 @@ export default function FinanceApp() {
   });
 
   // ── Checklist actions ───────────────────────────────────────────────────────
-  const toggleChecklist = withSync(async(item)=>{
+  const toggleChecklist = async (item) => {
     const newVal = !item.paid;
-    // Update local state immediately (optimistic)
+    // Optimistic update — instant, no sync spinner
     setChecklist(prev=>prev.map(i=>i.id===item.id?{...i,paid:newVal}:i));
     const {error} = await supabase.from("checklist").update({paid:newVal}).eq("id",item.id);
     if(error) console.error("Checklist toggle error:",error.message);
-  });
+  };
   const saveChecklistItem = withSync(async()=>{
+    if(!form.name?.trim()) return; // Guard: don't save empty name
     if(editingChecklistItem) {
-      const upd = {name:form.name||editingChecklistItem.name, amount:+form.amount||editingChecklistItem.amount};
-      await supabase.from("checklist").update(upd).eq("id",editingChecklistItem.id);
+      // Fix: use explicit check instead of || to allow 0 amounts
+      const upd = {
+        name: form.name.trim(),
+        amount: form.amount !== "" ? +form.amount : editingChecklistItem.amount
+      };
+      const {error} = await supabase.from("checklist").update(upd).eq("id",editingChecklistItem.id);
+      if(error) console.error("Checklist update error:",error.message);
       setChecklist(prev=>prev.map(i=>i.id===editingChecklistItem.id?{...i,...upd}:i));
     } else {
-      const row = {name:form.name||"New Item", amount:+form.amount||0, paid:false, sort_order:checklist.length+1};
+      const row = {
+        name: form.name.trim(),
+        amount: form.amount !== "" ? +form.amount : 0,
+        paid: false,
+        sort_order: checklist.length + 1
+      };
       const {data,error} = await supabase.from("checklist").insert(row).select().single();
       if(error) console.error("Checklist insert error:",error.message);
-      // Always add to local state — use Supabase id if available, temp id otherwise
-      setChecklist(prev=>[...prev, data||{...row,id:Date.now()}]);
+      // Add to START of list so it's always visible, not buried at the end
+      setChecklist(prev=>[data||{...row,id:Date.now()}, ...prev]);
+      // Auto-expand so user can see the new item
+      setShowAllChecklist(true);
     }
     setModal(null); setForm({});
   });
   const deleteChecklistItem = withSync(async(id)=>{
-    await supabase.from("checklist").delete().eq("id",id);
+    const {error} = await supabase.from("checklist").delete().eq("id",id);
+    if(error) console.error("Checklist delete error:",error.message);
     setChecklist(prev=>prev.filter(i=>i.id!==id));
     setModal(null);
   });
@@ -992,11 +1006,19 @@ export default function FinanceApp() {
         {editingSession&&<button onClick={()=>deleteEvSession(editingSession.id)} style={{width:"100%",marginTop:10,background:"transparent",border:"1px solid #ef4444",borderRadius:14,padding:12,color:"#ef4444",fontSize:14,cursor:"pointer",fontFamily:"Sora,sans-serif"}}>🗑 Delete Session</button>}
       </Modal>
       <Modal open={modal==="editChecklistItem"} onClose={()=>setModal(null)} title={editingChecklistItem?"Edit Item":"Add Item"} dark={d}>
-        <Input label="Item Name" value={form.name||""} onChange={e=>setForm(p=>({...p,name:e.target.value}))} dark={d}/>
-        <Input label="Amount" value={form.amount||""} onChange={e=>setForm(p=>({...p,amount:e.target.value}))} type="number" step="0.01" prefix="RM" dark={d}/>
+        <Input label="Item Name" value={form.name||""} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Netflix, Insurance…" dark={d}/>
+        <Input label="Amount (RM)" value={form.amount??""} onChange={e=>setForm(p=>({...p,amount:e.target.value}))} type="number" step="0.01" prefix="RM" dark={d}/>
+        {form.name?.trim() && form.amount!=="" && (
+          <div style={{background:d?"#1e293b":"#f0fdf4",borderRadius:12,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontSize:13,color:sub}}>Will be added as</span>
+            <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>{form.name} · RM {fmt(+form.amount||0)}</span>
+          </div>
+        )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <Btn onClick={()=>setModal(null)} variant="secondary" dark={d}>Cancel</Btn>
-          <Btn onClick={saveChecklistItem} dark={d}>Save</Btn>
+          <Btn onClick={saveChecklistItem} dark={d} style={{opacity:form.name?.trim()?1:0.5}}>
+            {editingChecklistItem?"Update":"Add Item"}
+          </Btn>
         </div>
         {editingChecklistItem&&<button onClick={()=>deleteChecklistItem(editingChecklistItem.id)} style={{width:"100%",marginTop:10,background:"transparent",border:"1px solid #ef4444",borderRadius:14,padding:12,color:"#ef4444",fontSize:14,cursor:"pointer",fontFamily:"Sora,sans-serif"}}>🗑 Remove Item</button>}
       </Modal>
