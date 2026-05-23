@@ -162,6 +162,25 @@ export default function FinanceApp() {
   // ── Load all data from Supabase on mount ────────────────────────────────────
   useEffect(()=>{ loadAll(); },[]);
 
+  // ── Auto-reset checklist on new month ───────────────────────────────────────
+  useEffect(()=>{
+    if(checklist.length === 0) return; // Don't run before data loads
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${now.getMonth()+1}`;
+    const lastResetKey = "checklist_last_reset";
+    const lastReset = localStorage.getItem(lastResetKey);
+    if(lastReset !== currentMonth) {
+      // New month detected — reset all paid items to unpaid
+      const resetAll = async () => {
+        const {error} = await supabase.from("checklist").update({paid:false}).neq("id",0);
+        if(error) console.error("Auto-reset error:",error.message);
+        setChecklist(prev=>prev.map(i=>({...i,paid:false})));
+        localStorage.setItem(lastResetKey, currentMonth);
+      };
+      resetAll();
+    }
+  },[checklist.length > 0]);
+
   async function loadAll() {
     setLoading(true); setDbError(null);
     try {
@@ -499,7 +518,7 @@ export default function FinanceApp() {
               <div style={{height:6,background:d?"#1e293b":"#e2e8f0",borderRadius:99,marginBottom:4}}>
                 <div style={{height:"100%",width:`${checklist.length?((paidCount/checklist.length)*100):0}%`,background:"#22c55e",borderRadius:99,transition:"width 0.4s"}}/>
               </div>
-              <p style={{fontSize:11,color:sub,marginBottom:14}}>{checklist.length?Math.round((paidCount/checklist.length)*100):0}% complete · May 2026</p>
+              <p style={{fontSize:11,color:sub,marginBottom:14}}>{checklist.length?Math.round((paidCount/checklist.length)*100):0}% complete · {new Date().toLocaleDateString("en-MY",{month:"long",year:"numeric"})}</p>
               {[...checklist].sort((a,b)=>{
                 // No due date goes to bottom
                 if(!a.due_date && !b.due_date) return 0;
