@@ -46,6 +46,9 @@ create table if not exists ev_sessions (
   id         bigint primary key generated always as identity,
   date       text    not null,
   kwh        numeric not null default 0,
+  rate       numeric not null default 0,
+  cost       numeric not null default 0,
+  charger    text    not null default '',
   duration   text    not null default '—',
   type       text    not null default 'AC',
   created_at timestamptz default now()
@@ -106,9 +109,9 @@ insert into checklist (name, amount, paid, sort_order) values
 on conflict do nothing;
 
 -- ─── Seed EV sessions ─────────────────────────────────────────────────────────
-insert into ev_sessions (date, kwh, duration, type) values
-  ('26 Apr', 30.2, '3h 12m', 'DC'),
-  ('21 Apr', 25.2, '2h 44m', 'AC')
+insert into ev_sessions (date, kwh, rate, cost, charger, duration, type) values
+  ('26 Apr', 30.2, 0.55, 16.61, 'ChargEV KLCC',     '3h 12m', 'DC'),
+  ('21 Apr', 25.2, 0.50, 12.60, 'TNB DCFC Bangsar', '2h 44m', 'AC')
 on conflict do nothing;
 
 -- ─── Seed expenses ────────────────────────────────────────────────────────────

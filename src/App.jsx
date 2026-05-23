@@ -140,7 +140,6 @@ export default function FinanceApp() {
   ]);
   const [editingIncomeSource, setEditingIncomeSource] = useState(null);
   const [monthlyBudget,  setMonthlyBudget]  = useState(2400);
-  const [tnbRate,        setTnbRate]        = useState(0.571);
   const [cutoffDay,      setCutoffDay]      = useState(17);
 
   // UI state
@@ -191,7 +190,6 @@ export default function FinanceApp() {
       if(settingsData) {
         const s = Object.fromEntries(settingsData.map(r=>[r.key,r.value]));
         if(s.monthly_budget) setMonthlyBudget(+s.monthly_budget);
-        if(s.tnb_rate)       setTnbRate(+s.tnb_rate);
         if(s.cutoff_day)     setCutoffDay(+s.cutoff_day);
       }
     } catch(err) {
@@ -272,7 +270,15 @@ export default function FinanceApp() {
 
   // ── EV actions ──────────────────────────────────────────────────────────────
   const saveEvSession = withSync(async()=>{
-    const row = {date:form.date||"Today", kwh:+form.kwh||0, duration:form.duration||"—", type:form.type||"AC"};
+    const row = {
+      date:form.date||"Today",
+      kwh:+form.kwh||0,
+      rate:+form.rate||0,
+      cost:(+form.kwh||0)*(+form.rate||0),
+      charger:form.charger||"",
+      duration:form.duration||"—",
+      type:form.type||"AC"
+    };
     if(editingSession) {
       await supabase.from("ev_sessions").update(row).eq("id",editingSession.id);
       setEvSessions(prev=>prev.map(s=>s.id===editingSession.id?{...s,...row}:s));
@@ -314,9 +320,9 @@ export default function FinanceApp() {
     setMonthlyBudget(mb); setModal(null);
   });
   const saveEvSettings = withSync(async()=>{
-    const r=+form.tnbRate||tnbRate, c=+form.cutoffDay||cutoffDay;
-    await Promise.all([saveSetting("tnb_rate",r), saveSetting("cutoff_day",c)]);
-    setTnbRate(r); setCutoffDay(c); setModal(null);
+    const c=+form.cutoffDay||cutoffDay;
+    await saveSetting("cutoff_day",c);
+    setCutoffDay(c); setModal(null);
   });
 
   // Group expenses by date label
@@ -589,78 +595,86 @@ export default function FinanceApp() {
 
         {/* ── EV CHARGING ── */}
         {tab==="ev"&&(()=>{
-          const totalKwh=evSessions.reduce((s,e)=>s+Number(e.kwh),0);
-          const totalCost=totalKwh*tnbRate;
-          const avgKwh=evSessions.length?(totalKwh/evSessions.length):0;
+          const totalKwh  = evSessions.reduce((s,e)=>s+Number(e.kwh),0);
+          const totalCost = evSessions.reduce((s,e)=>s+Number(e.cost||0),0);
+          const avgRate   = evSessions.length ? (evSessions.reduce((s,e)=>s+Number(e.rate||0),0)/evSessions.length) : 0;
+          const avgKwh    = evSessions.length ? totalKwh/evSessions.length : 0;
+          const lastRate  = evSessions.length ? Number(evSessions[0].rate||0) : 0;
           return (
           <div style={{padding:"16px 20px"}} className="fade-up">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <h2 style={{fontSize:20,fontWeight:800,color:text}}>EV Charging</h2>
-              <button onClick={()=>{setForm({tnbRate,cutoffDay});setModal("evSettings");}} style={{width:36,height:36,borderRadius:10,background:card,border:`1px solid ${border}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:16}}>⚙️</button>
+              <button onClick={()=>{setForm({cutoffDay});setModal("evSettings");}} style={{width:36,height:36,borderRadius:10,background:card,border:`1px solid ${border}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:16}}>⚙️</button>
             </div>
-            <div onClick={()=>{setForm({tnbRate,cutoffDay});setModal("evSettings");}} style={{background:"linear-gradient(135deg,#3730a3,#7c3aed)",borderRadius:20,padding:"18px 24px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 8px 32px rgba(124,58,237,0.25)",cursor:"pointer",position:"relative"}}>
-              <div>
-                <p style={{fontSize:10,color:"#c4b5fd",letterSpacing:1.5,textTransform:"uppercase",marginBottom:4}}>TNB Rate</p>
-                <p style={{fontSize:24,fontWeight:800,color:"#fff"}}>RM {tnbRate.toFixed(3)}<span style={{fontSize:14,fontWeight:400}}> / kWh</span></p>
-              </div>
-              <div style={{textAlign:"right"}}>
-                <p style={{fontSize:10,color:"#c4b5fd",letterSpacing:1.5,textTransform:"uppercase",marginBottom:4}}>Cut-off Day</p>
-                <p style={{fontSize:18,fontWeight:700,color:"#fff"}}>Day {cutoffDay} <span style={{fontSize:11,fontWeight:400}}>every month</span></p>
-              </div>
-              <span style={{position:"absolute",top:12,right:12,fontSize:11,color:"rgba(255,255,255,0.5)"}}>✏️</span>
-            </div>
-            <div style={{background:"#eff6ff",borderRadius:16,padding:"14px 18px",marginBottom:14,display:"flex",gap:12,alignItems:"flex-start"}}>
-              <span style={{fontSize:18}}>🔔</span>
-              <div>
-                <p style={{fontWeight:700,color:"#1e40af",fontSize:14}}>TNB Bill Released</p>
-                <p style={{color:"#3b82f6",fontSize:12,marginTop:2}}>May 2026 bill available · 18 Apr — 18 May 2026</p>
+
+            {/* Summary card */}
+            <div style={{background:"linear-gradient(135deg,#3730a3,#7c3aed)",borderRadius:20,padding:"18px 24px",marginBottom:12,boxShadow:"0 8px 32px rgba(124,58,237,0.25)"}}>
+              <p style={{fontSize:10,color:"#c4b5fd",letterSpacing:1.5,textTransform:"uppercase",marginBottom:10}}>This Month · May 2026</p>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+                <div>
+                  <p style={{fontSize:28,fontWeight:800,color:"#fff"}}>RM {fmt(totalCost)}</p>
+                  <p style={{fontSize:12,color:"#c4b5fd",marginTop:4}}>{evSessions.length} session{evSessions.length!==1?"s":""} · {totalKwh.toFixed(1)} kWh total</p>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <p style={{fontSize:10,color:"#c4b5fd",marginBottom:4}}>Avg rate</p>
+                  <p style={{fontSize:18,fontWeight:700,color:"#fff"}}>RM {avgRate.toFixed(3)}<span style={{fontSize:11,fontWeight:400}}>/kWh</span></p>
+                  <p style={{fontSize:10,color:"#c4b5fd",marginTop:2}}>Cut-off Day {cutoffDay}</p>
+                </div>
               </div>
             </div>
+
+            {/* Stats */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-              {[{label:"Sessions",value:String(evSessions.length),color:text},{label:"kWh",value:totalKwh.toFixed(1),color:"#6366f1"},{label:"Cost",value:`RM ${fmt(totalCost)}`,color:"#f87171"},{label:"Avg/Sess",value:`${avgKwh.toFixed(1)} kWh`,color:"#a855f7"}].map(s=>(
+              {[
+                {label:"Sessions",   value:String(evSessions.length),        color:text},
+                {label:"Total kWh",  value:totalKwh.toFixed(1),              color:"#6366f1"},
+                {label:"Total Cost", value:`RM ${fmt(totalCost)}`,           color:"#f87171"},
+                {label:"Avg kWh",    value:`${avgKwh.toFixed(1)} kWh`,       color:"#a855f7"},
+              ].map(s=>(
                 <div key={s.label} style={{background:card,borderRadius:16,padding:"14px 16px",border:`1px solid ${border}`,textAlign:"center"}}>
                   <p style={{fontSize:18,fontWeight:800,color:s.color,marginBottom:4}}>{s.value}</p>
                   <p style={{fontSize:10,color:sub,textTransform:"uppercase",letterSpacing:1}}>{s.label}</p>
                 </div>
               ))}
             </div>
-            <div style={{background:card,borderRadius:20,padding:20,marginBottom:14,border:`1px solid ${border}`}}>
-              <p style={{fontWeight:700,fontSize:16,color:text,marginBottom:2}}>Billing Cycle Cost</p>
-              <p style={{fontSize:11,color:sub,marginBottom:16}}>Last 6 TNB billing cycles</p>
-              <div style={{display:"flex",alignItems:"flex-end",gap:8,height:120}}>
-                {BILLING_DATA.map((d2,i)=>{
-                  const max=Math.max(...BILLING_DATA.map(x=>x.cost));
-                  return (
-                    <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-                      <span style={{fontSize:9,color:sub}}>{d2.cost}</span>
-                      <div style={{width:"100%",borderRadius:"5px 5px 0 0",height:`${(d2.cost/max)*90}px`,background:d2.current?"linear-gradient(180deg,#7c3aed,#4f46e5)":"#1d4ed8",minHeight:4}}/>
-                      <span style={{fontSize:9,color:sub}}>{d2.month}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+
+            {/* Sessions list */}
             <div style={{background:card,borderRadius:20,padding:20,border:`1px solid ${border}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
                 <div>
-                  <p style={{fontWeight:700,fontSize:16,color:text}}>Sessions · May 2026</p>
-                  <p style={{fontSize:11,color:sub,marginTop:2}}>{evSessions.length} session{evSessions.length!==1?"s":""} · {totalKwh.toFixed(1)} kWh total</p>
+                  <p style={{fontWeight:700,fontSize:16,color:text}}>Sessions</p>
+                  <p style={{fontSize:11,color:sub,marginTop:2}}>Last used rate: RM {lastRate.toFixed(3)}/kWh</p>
                 </div>
-                <button onClick={()=>{setEditingSession(null);setForm({date:"",kwh:"",duration:"",type:"DC"});setModal("evSession");}} style={{background:"linear-gradient(135deg,#6366f1,#7c3aed)",border:"none",borderRadius:12,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add</button>
+                <button onClick={()=>{
+                  setEditingSession(null);
+                  setForm({date:"",kwh:"",rate:lastRate||"",charger:"",duration:"",type:"DC"});
+                  setModal("evSession");
+                }} style={{background:"linear-gradient(135deg,#6366f1,#7c3aed)",border:"none",borderRadius:12,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add</button>
               </div>
-              {evSessions.length===0&&<p style={{fontSize:13,color:sub,textAlign:"center",padding:"20px 0"}}>No sessions yet.</p>}
+
+              {evSessions.length===0&&<p style={{fontSize:13,color:sub,textAlign:"center",padding:"20px 0"}}>No sessions yet. Tap + Add to log one.</p>}
+
               {evSessions.map((s,i)=>(
-                <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:i<evSessions.length-1?`1px solid ${border}`:"none"}}>
-                  <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                    <div style={{width:38,height:38,borderRadius:12,background:s.type==="DC"?"#1d4ed833":"#7c3aed33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>⚡</div>
-                    <div>
-                      <p style={{fontWeight:600,fontSize:14,color:text}}>{s.date}</p>
-                      <p style={{fontSize:11,color:sub}}>{s.duration} · {s.kwh} kWh <span style={{background:s.type==="DC"?"#1d4ed8":"#7c3aed",borderRadius:4,padding:"1px 5px",fontSize:9,color:"#fff",marginLeft:4}}>{s.type}</span></p>
+                <div key={s.id} style={{padding:"12px 0",borderBottom:i<evSessions.length-1?`1px solid ${border}`:"none"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                      <div style={{width:38,height:38,borderRadius:12,background:s.type==="DC"?"#1d4ed833":"#7c3aed33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>⚡</div>
+                      <div>
+                        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                          <p style={{fontWeight:600,fontSize:14,color:text}}>{s.date}</p>
+                          <span style={{background:s.type==="DC"?"#1d4ed8":"#7c3aed",borderRadius:4,padding:"1px 6px",fontSize:9,color:"#fff"}}>{s.type}</span>
+                        </div>
+                        {s.charger&&<p style={{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:1}}>📍 {s.charger}</p>}
+                        <p style={{fontSize:11,color:sub,marginTop:2}}>
+                          {s.kwh} kWh · {s.duration}
+                          {s.rate ? ` · RM ${Number(s.rate).toFixed(3)}/kWh` : ""}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                    <span style={{fontWeight:700,fontSize:14,color:"#a5b4fc"}}>RM {fmt(Number(s.kwh)*tnbRate)}</span>
-                    <button onClick={()=>{setEditingSession(s);setForm({...s});setModal("evSession");}} style={{background:d?"#1e293b":"#f1f5f9",border:"none",borderRadius:8,width:28,height:28,cursor:"pointer",fontSize:12}}>✏️</button>
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+                      <span style={{fontWeight:700,fontSize:14,color:"#a5b4fc"}}>RM {fmt(Number(s.cost||0))}</span>
+                      <button onClick={()=>{setEditingSession(s);setForm({...s});setModal("evSession");}} style={{background:d?"#1e293b":"#f1f5f9",border:"none",borderRadius:8,width:28,height:28,cursor:"pointer",fontSize:12}}>✏️</button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -915,15 +929,18 @@ export default function FinanceApp() {
         {modal==="editLoan"&&<button onClick={()=>deleteLoan(editingLoan.id)} style={{width:"100%",marginTop:10,background:"transparent",border:"1px solid #ef4444",borderRadius:14,padding:12,color:"#ef4444",fontSize:14,cursor:"pointer",fontFamily:"Sora,sans-serif"}}>🗑 Delete Loan</button>}
       </Modal>
       <Modal open={modal==="evSettings"} onClose={()=>setModal(null)} title="EV Settings" dark={d}>
-        <Input label="TNB Rate (RM / kWh)" value={form.tnbRate||""} onChange={e=>setForm(p=>({...p,tnbRate:e.target.value}))} type="number" step="0.001" prefix="RM" dark={d}/>
         <Input label="Billing Cut-off Day" value={form.cutoffDay||""} onChange={e=>setForm(p=>({...p,cutoffDay:e.target.value}))} type="number" dark={d}/>
-        <p style={{fontSize:11,color:sub,marginBottom:14,marginTop:-8}}>Day of month when TNB bill resets (1–28)</p>
+        <p style={{fontSize:11,color:sub,marginBottom:14,marginTop:-8}}>Day of the month your billing cycle resets (1–28)</p>
         <Btn onClick={saveEvSettings} dark={d}>Save Settings</Btn>
       </Modal>
-      <Modal open={modal==="evSession"} onClose={()=>setModal(null)} title={editingSession?"Edit Session":"Add Session"} dark={d}>
+      <Modal open={modal==="evSession"} onClose={()=>setModal(null)} title={editingSession?"Edit Session":"Log Session"} dark={d}>
         <Input label="Date (e.g. 26 Apr)" value={form.date||""} onChange={e=>setForm(p=>({...p,date:e.target.value}))} dark={d}/>
-        <Input label="Energy charged (kWh)" value={form.kwh||""} onChange={e=>setForm(p=>({...p,kwh:e.target.value}))} type="number" step="0.1" dark={d}/>
-        <Input label="Duration (e.g. 2h 30m)" value={form.duration||""} onChange={e=>setForm(p=>({...p,duration:e.target.value}))} dark={d}/>
+        <Input label="Charger Name / Location" value={form.charger||""} onChange={e=>setForm(p=>({...p,charger:e.target.value}))} placeholder="e.g. ChargEV KLCC, TNB DCFC Bangsar…" dark={d}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Input label="Energy (kWh)" value={form.kwh||""} onChange={e=>setForm(p=>({...p,kwh:e.target.value}))} type="number" step="0.1" dark={d}/>
+          <Input label="Rate (RM/kWh)" value={form.rate||""} onChange={e=>setForm(p=>({...p,rate:e.target.value}))} type="number" step="0.001" prefix="RM" dark={d}/>
+        </div>
+        <Input label="Duration (e.g. 1h 20m)" value={form.duration||""} onChange={e=>setForm(p=>({...p,duration:e.target.value}))} dark={d}/>
         <div style={{marginBottom:16}}>
           <label style={{fontSize:12,color:d?"#94a3b8":"#64748b",display:"block",marginBottom:8,fontWeight:600}}>Charger Type</label>
           <div style={{display:"flex",gap:10}}>
@@ -932,7 +949,16 @@ export default function FinanceApp() {
             ))}
           </div>
         </div>
-        {form.kwh&&<div style={{background:d?"#1e293b":"#f8fafc",borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:13,color:sub}}>Estimated cost</span><span style={{fontSize:14,fontWeight:700,color:"#a5b4fc"}}>RM {fmt((+form.kwh||0)*tnbRate)}</span></div>}
+        {/* Live cost estimate */}
+        {(form.kwh||form.rate)&&(
+          <div style={{background:d?"#1e293b":"#f8fafc",borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontSize:13,color:sub}}>Estimated cost</span>
+              <span style={{fontSize:15,fontWeight:800,color:"#a5b4fc"}}>RM {fmt((+form.kwh||0)*(+form.rate||0))}</span>
+            </div>
+            <p style={{fontSize:10,color:sub}}>{form.kwh||0} kWh × RM {Number(form.rate||0).toFixed(3)}/kWh</p>
+          </div>
+        )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <Btn onClick={()=>setModal(null)} variant="secondary" dark={d}>Cancel</Btn>
           <Btn onClick={saveEvSession} dark={d}>Save Session</Btn>
