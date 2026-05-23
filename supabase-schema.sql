@@ -122,3 +122,7 @@ insert into expenses (name, category, icon, amount, date, time) values
   ('Grab',             'Transport', '🚕',  15.00, '2026-05-19', '06:45 PM'),
   ('Electricity Bill', 'Utilities', '⚡', 145.00, '2026-05-18', '09:00 AM')
 on conflict do nothing;
+
+alter table ev_sessions add column if not exists rate    numeric not null default 0;
+alter table ev_sessions add column if not exists cost    numeric not null default 0;
+alter table ev_sessions add column if not exists charger text    not null default '';
