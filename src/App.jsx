@@ -159,6 +159,20 @@ export default function FinanceApp() {
   const sub   = d?"#475569":"#94a3b8";
   const navBg = d?"#0a0f1e":"#ffffff";
 
+  // ── localStorage helpers ─────────────────────────────────────────────────────
+  const lsSave = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){} };
+  const lsLoad = (key) => { try { const v=localStorage.getItem(key); return v?JSON.parse(v):null; } catch(e){ return null; } };
+
+  // ── Persist all data to localStorage whenever state changes ─────────────────
+  useEffect(()=>{ if(loans.length)         lsSave("ls_loans",    loans);      },[loans]);
+  useEffect(()=>{ if(expenses.length)      lsSave("ls_expenses", expenses);   },[expenses]);
+  useEffect(()=>{ if(checklist.length)     lsSave("ls_checklist",checklist);  },[checklist]);
+  useEffect(()=>{ if(evSessions.length)    lsSave("ls_ev",       evSessions); },[evSessions]);
+  useEffect(()=>{ if(incomeSources.length) lsSave("ls_income",   incomeSources); },[incomeSources]);
+  useEffect(()=>{ lsSave("ls_budget",  monthlyBudget); },[monthlyBudget]);
+  useEffect(()=>{ lsSave("ls_cutoff",  cutoffDay);     },[cutoffDay]);
+  useEffect(()=>{ lsSave("ls_dark",    dark);          },[dark]);
+
   // ── Load all data from Supabase on mount ────────────────────────────────────
   useEffect(()=>{ loadAll(); },[]);
 
@@ -193,6 +207,29 @@ export default function FinanceApp() {
 
   async function loadAll() {
     setLoading(true); setDbError(null);
+
+    // ── Step 1: Load from localStorage immediately (instant, works offline) ────
+    const lsLoans     = lsLoad("ls_loans");
+    const lsExpenses  = lsLoad("ls_expenses");
+    const lsChecklist = lsLoad("ls_checklist");
+    const lsEv        = lsLoad("ls_ev");
+    const lsIncome    = lsLoad("ls_income");
+    const lsBudget    = lsLoad("ls_budget");
+    const lsCutoff    = lsLoad("ls_cutoff");
+    const lsDark      = lsLoad("ls_dark");
+    if(lsLoans)     setLoans(lsLoans);
+    if(lsExpenses)  setExpenses(lsExpenses);
+    if(lsChecklist) setChecklist(lsChecklist);
+    if(lsEv)        setEvSessions(lsEv);
+    if(lsIncome)    setIncomeSources(lsIncome);
+    if(lsBudget)    setMonthlyBudget(lsBudget);
+    if(lsCutoff)    setCutoffDay(lsCutoff);
+    if(lsDark !== null) setDark(lsDark);
+
+    // Show app immediately with localStorage data while Supabase loads
+    setLoading(false);
+
+    // ── Step 2: Sync from Supabase in background ──────────────────────────────
     try {
       const [
         {data:loansData,    error:e1},
@@ -211,21 +248,23 @@ export default function FinanceApp() {
       ]);
       const err = e1||e2||e3||e4||e5||e6;
       if(err) throw err;
-      setLoans(loansData||[]);
-      setExpenses(expData||[]);
-      setChecklist(checkData||[]);
-      setEvSessions(evData||[]);
+      // Supabase is source of truth — update state with fresh data
+      if(loansData)    setLoans(loansData);
+      if(expData)      setExpenses(expData);
+      if(checkData)    setChecklist(checkData);
+      if(evData)       setEvSessions(evData);
       if(incomeData&&incomeData.length>0) setIncomeSources(incomeData);
       if(settingsData) {
         const s = Object.fromEntries(settingsData.map(r=>[r.key,r.value]));
         if(s.monthly_budget) setMonthlyBudget(+s.monthly_budget);
         if(s.cutoff_day)     setCutoffDay(+s.cutoff_day);
       }
+      setDbError(null);
     } catch(err) {
-      setDbError("Could not connect to Supabase. Check your URL & API key in supabase.js");
+      // Supabase failed — localStorage data is already shown, just flag it
+      setDbError("Offline mode — changes saved locally, will sync when reconnected");
       console.error(err);
     }
-    setLoading(false);
   }
 
   async function saveSetting(key, value) {
@@ -436,9 +475,9 @@ export default function FinanceApp() {
 
       {/* DB Error banner */}
       {dbError && (
-        <div style={{background:"#fef2f2",border:"1px solid #fecaca",margin:"12px 20px",borderRadius:12,padding:"12px 16px"}}>
-          <p style={{fontSize:12,color:"#b91c1c",fontWeight:600}}>⚠️ Supabase not connected</p>
-          <p style={{fontSize:11,color:"#dc2626",marginTop:4}}>{dbError}</p>
+        <div style={{background: dbError.includes("Offline") ? "#fffbeb" : "#fef2f2", border:`1px solid ${dbError.includes("Offline")?"#fde68a":"#fecaca"}`,margin:"12px 20px",borderRadius:12,padding:"12px 16px"}}>
+          <p style={{fontSize:12,color:dbError.includes("Offline")?"#92400e":"#b91c1c",fontWeight:600}}>{dbError.includes("Offline")?"📶 Offline mode":"⚠️ Supabase not connected"}</p>
+          <p style={{fontSize:11,color:dbError.includes("Offline")?"#b45309":"#dc2626",marginTop:4}}>{dbError}</p>
         </div>
       )}
 
