@@ -500,7 +500,13 @@ export default function FinanceApp() {
                 <div style={{height:"100%",width:`${checklist.length?((paidCount/checklist.length)*100):0}%`,background:"#22c55e",borderRadius:99,transition:"width 0.4s"}}/>
               </div>
               <p style={{fontSize:11,color:sub,marginBottom:14}}>{checklist.length?Math.round((paidCount/checklist.length)*100):0}% complete · May 2026</p>
-              {checklist.slice(0,showAllChecklist?checklist.length:6).map(item=>{
+              {[...checklist].sort((a,b)=>{
+                // No due date goes to bottom
+                if(!a.due_date && !b.due_date) return 0;
+                if(!a.due_date) return 1;
+                if(!b.due_date) return -1;
+                return new Date(a.due_date) - new Date(b.due_date);
+              }).slice(0,showAllChecklist?checklist.length:6).map(item=>{
                 const today = new Date(); today.setHours(0,0,0,0);
                 const due = item.due_date ? new Date(item.due_date) : null;
                 const isOverdue = due && !item.paid && due < today;
