@@ -248,13 +248,15 @@ export default function FinanceApp() {
       ]);
       const err = e1||e2||e3||e4||e5||e6;
       if(err) throw err;
-      // Supabase is source of truth — update state with fresh data
-      if(loansData)    setLoans(loansData);
-      if(expData)      setExpenses(expData);
-      if(checkData)    setChecklist(checkData);
-      if(evData)       setEvSessions(evData);
-      if(incomeData&&incomeData.length>0) setIncomeSources(incomeData);
-      if(settingsData) {
+
+      // Only overwrite localStorage data if Supabase actually has records.
+      // If Supabase tables are empty (setup incomplete), keep localStorage data.
+      if(loansData?.length   > 0) setLoans(loansData);
+      if(expData?.length     > 0) setExpenses(expData);
+      if(checkData?.length   > 0) setChecklist(checkData);
+      if(evData?.length      > 0) setEvSessions(evData);
+      if(incomeData?.length  > 0) setIncomeSources(incomeData);
+      if(settingsData?.length> 0) {
         const s = Object.fromEntries(settingsData.map(r=>[r.key,r.value]));
         if(s.monthly_budget) setMonthlyBudget(+s.monthly_budget);
         if(s.cutoff_day)     setCutoffDay(+s.cutoff_day);
