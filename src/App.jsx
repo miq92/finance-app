@@ -255,12 +255,12 @@ export default function FinanceApp() {
     if(error) console.error("Checklist toggle error:",error.message);
   };
   const saveChecklistItem = withSync(async()=>{
-    if(!form.name?.trim()) return; // Guard: don't save empty name
+    if(!form.name?.trim()) return;
     if(editingChecklistItem) {
-      // Fix: use explicit check instead of || to allow 0 amounts
       const upd = {
         name: form.name.trim(),
-        amount: form.amount !== "" ? +form.amount : editingChecklistItem.amount
+        amount: form.amount !== "" ? +form.amount : editingChecklistItem.amount,
+        due_date: form.due_date || null
       };
       const {error} = await supabase.from("checklist").update(upd).eq("id",editingChecklistItem.id);
       if(error) console.error("Checklist update error:",error.message);
@@ -269,14 +269,13 @@ export default function FinanceApp() {
       const row = {
         name: form.name.trim(),
         amount: form.amount !== "" ? +form.amount : 0,
+        due_date: form.due_date || null,
         paid: false,
         sort_order: checklist.length + 1
       };
       const {data,error} = await supabase.from("checklist").insert(row).select().single();
       if(error) console.error("Checklist insert error:",error.message);
-      // Add to START of list so it's always visible, not buried at the end
       setChecklist(prev=>[data||{...row,id:Date.now()}, ...prev]);
-      // Auto-expand so user can see the new item
       setShowAllChecklist(true);
     }
     setModal(null); setForm({});
@@ -501,25 +500,43 @@ export default function FinanceApp() {
                 <div style={{height:"100%",width:`${checklist.length?((paidCount/checklist.length)*100):0}%`,background:"#22c55e",borderRadius:99,transition:"width 0.4s"}}/>
               </div>
               <p style={{fontSize:11,color:sub,marginBottom:14}}>{checklist.length?Math.round((paidCount/checklist.length)*100):0}% complete · May 2026</p>
-              {checklist.slice(0,showAllChecklist?checklist.length:6).map(item=>(
+              {checklist.slice(0,showAllChecklist?checklist.length:6).map(item=>{
+                const today = new Date(); today.setHours(0,0,0,0);
+                const due = item.due_date ? new Date(item.due_date) : null;
+                const isOverdue = due && !item.paid && due < today;
+                const isDueToday = due && !item.paid && due.toDateString()===today.toDateString();
+                const dueFmt = due ? due.toLocaleDateString("en-MY",{day:"numeric",month:"short"}) : null;
+                return (
                 <div key={item.id} style={{display:"flex",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${border}`,gap:8}}>
                   {checklistEditMode&&<span style={{fontSize:14,color:sub,cursor:"grab",userSelect:"none"}}>☰</span>}
                   <div onClick={()=>!checklistEditMode&&toggleChecklist(item)}
-                    style={{width:20,height:20,borderRadius:6,flexShrink:0,border:`2px solid ${item.paid?"#22c55e":border}`,background:item.paid?"#22c55e":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff",transition:"all 0.2s",cursor:checklistEditMode?"default":"pointer"}}>
+                    style={{width:20,height:20,borderRadius:6,flexShrink:0,border:`2px solid ${item.paid?"#22c55e":isOverdue?"#ef4444":border}`,background:item.paid?"#22c55e":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff",transition:"all 0.2s",cursor:checklistEditMode?"default":"pointer"}}>
                     {item.paid?"✓":""}
                   </div>
-                  <div style={{flex:1,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontSize:14,color:item.paid&&!checklistEditMode?sub:text,textDecoration:item.paid&&!checklistEditMode?"line-through":"none",transition:"all 0.2s"}}>{item.name}</span>
-                    <span style={{fontSize:13,fontWeight:700,color:item.paid&&!checklistEditMode?"#22c55e":sub}}>RM {fmt(item.amount)}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:14,color:item.paid&&!checklistEditMode?sub:text,textDecoration:item.paid&&!checklistEditMode?"line-through":"none",transition:"all 0.2s"}}>{item.name}</span>
+                      <span style={{fontSize:13,fontWeight:700,color:item.paid&&!checklistEditMode?"#22c55e":sub,flexShrink:0,marginLeft:8}}>RM {fmt(item.amount)}</span>
+                    </div>
+                    {dueFmt && !item.paid && (
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}>
+                        <span style={{fontSize:10,color:isOverdue?"#ef4444":isDueToday?"#f97316":"#64748b"}}>
+                          📅 {isOverdue?"Overdue · ":isDueToday?"Due today · ":""}{dueFmt}
+                        </span>
+                        {isOverdue && <span style={{background:"#fee2e2",color:"#ef4444",fontSize:9,padding:"1px 6px",borderRadius:99,fontWeight:700}}>OVERDUE</span>}
+                        {isDueToday && <span style={{background:"#fff7ed",color:"#ea580c",fontSize:9,padding:"1px 6px",borderRadius:99,fontWeight:700}}>TODAY</span>}
+                      </div>
+                    )}
                   </div>
                   {checklistEditMode&&(
                     <div style={{display:"flex",gap:6,flexShrink:0}}>
-                      <button onClick={()=>{setEditingChecklistItem(item);setForm({name:item.name,amount:item.amount});setModal("editChecklistItem");}} style={{background:d?"#1e293b":"#f1f5f9",border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",fontSize:13}}>✏️</button>
+                      <button onClick={()=>{setEditingChecklistItem(item);setForm({name:item.name,amount:item.amount,due_date:item.due_date||""});setModal("editChecklistItem");}} style={{background:d?"#1e293b":"#f1f5f9",border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",fontSize:13}}>✏️</button>
                       <button onClick={()=>deleteChecklistItem(item.id)} style={{background:"#fee2e2",border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",fontSize:13}}>🗑</button>
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
               {checklistEditMode&&(
                 <button onClick={()=>{setEditingChecklistItem(null);setForm({name:"",amount:""});setModal("editChecklistItem");}} style={{width:"100%",marginTop:12,background:"linear-gradient(135deg,#6366f1,#7c3aed)",border:"none",borderRadius:12,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>+ Add Item</button>
               )}
@@ -1008,6 +1025,15 @@ export default function FinanceApp() {
       <Modal open={modal==="editChecklistItem"} onClose={()=>setModal(null)} title={editingChecklistItem?"Edit Item":"Add Item"} dark={d}>
         <Input label="Item Name" value={form.name||""} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Netflix, Insurance…" dark={d}/>
         <Input label="Amount (RM)" value={form.amount??""} onChange={e=>setForm(p=>({...p,amount:e.target.value}))} type="number" step="0.01" prefix="RM" dark={d}/>
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:12,color:d?"#94a3b8":"#64748b",display:"block",marginBottom:6,fontWeight:600}}>Due Date <span style={{fontWeight:400,color:sub}}>(optional)</span></label>
+          <input type="date" value={form.due_date||""}
+            onChange={e=>setForm(p=>({...p,due_date:e.target.value}))}
+            style={{width:"100%",background:d?"#1e293b":"#f8fafc",border:`1px solid ${d?"#334155":"#e2e8f0"}`,borderRadius:12,padding:"12px",fontSize:15,color:form.due_date?(d?"#f1f5f9":"#0f172a"):sub,fontFamily:"Sora,sans-serif",outline:"none",cursor:"pointer",colorScheme:d?"dark":"light"}}/>
+          {form.due_date && (
+            <button onClick={()=>setForm(p=>({...p,due_date:""}))} style={{background:"transparent",border:"none",color:sub,fontSize:11,cursor:"pointer",marginTop:4,padding:0}}>✕ Clear date</button>
+          )}
+        </div>
         {form.name?.trim() && form.amount!=="" && (
           <div style={{background:d?"#1e293b":"#f0fdf4",borderRadius:12,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between"}}>
             <span style={{fontSize:13,color:sub}}>Will be added as</span>
