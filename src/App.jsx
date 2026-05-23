@@ -773,7 +773,7 @@ export default function FinanceApp() {
               <BarChart data={ANNUAL_DATA} valueKey="ev" color="#7c3aed" maxOverride={140}/>
               <div style={{display:"flex",justifyContent:"space-between",marginTop:12,padding:"10px 0",borderTop:`1px solid ${border}`}}>
                 <div style={{textAlign:"center"}}><p style={{fontSize:11,color:sub}}>Avg/month</p><p style={{fontSize:14,fontWeight:700,color:"#a5b4fc"}}>RM {fmt(totEV/Math.max(activeMonths,1))}</p></div>
-                <div style={{textAlign:"center"}}><p style={{fontSize:11,color:sub}}>Rate</p><p style={{fontSize:14,fontWeight:700,color:"#a5b4fc"}}>{tnbRate.toFixed(3)}</p></div>
+                <div style={{textAlign:"center"}}><p style={{fontSize:11,color:sub}}>Avg rate</p><p style={{fontSize:14,fontWeight:700,color:"#a5b4fc"}}>{evSessions.length?(evSessions.reduce((s,e)=>s+Number(e.rate||0),0)/evSessions.length).toFixed(3):"—"}/kWh</p></div>
                 <div style={{textAlign:"center"}}><p style={{fontSize:11,color:sub}}>Proj. full yr</p><p style={{fontSize:14,fontWeight:700,color:"#a5b4fc"}}>RM {fmt((totEV/Math.max(activeMonths,1))*12)}</p></div>
               </div>
             </div>
