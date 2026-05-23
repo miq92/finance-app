@@ -219,8 +219,9 @@ export default function FinanceApp() {
     const row = { name:form.name||"Expense", category:cat, icon:CATEGORY_ICONS[cat]||"📦",
       amount:+form.amount||0, date:new Date().toISOString().slice(0,10),
       time:new Date().toLocaleTimeString("en-MY",{hour:"2-digit",minute:"2-digit"}) };
-    const {data} = await supabase.from("expenses").insert(row).select().single();
-    if(data) setExpenses(prev=>[data,...prev]);
+    const {data,error} = await supabase.from("expenses").insert(row).select().single();
+    if(error) console.error("Expense insert error:",error.message);
+    setExpenses(prev=>[data||{...row,id:Date.now()},...prev]);
     setModal(null); setForm({});
   });
 
@@ -233,8 +234,9 @@ export default function FinanceApp() {
       await supabase.from("loans").update(row).eq("id",editingLoan.id);
       setLoans(prev=>prev.map(l=>l.id===editingLoan.id?{...l,...row}:l));
     } else {
-      const {data} = await supabase.from("loans").insert(row).select().single();
-      if(data) setLoans(prev=>[...prev,data]);
+      const {data,error} = await supabase.from("loans").insert(row).select().single();
+      if(error) console.error("Loan insert error:",error.message);
+      setLoans(prev=>[...prev, data||{...row,id:Date.now()}]);
     }
     setModal(null);
   });
@@ -247,8 +249,10 @@ export default function FinanceApp() {
   // ── Checklist actions ───────────────────────────────────────────────────────
   const toggleChecklist = withSync(async(item)=>{
     const newVal = !item.paid;
-    await supabase.from("checklist").update({paid:newVal}).eq("id",item.id);
+    // Update local state immediately (optimistic)
     setChecklist(prev=>prev.map(i=>i.id===item.id?{...i,paid:newVal}:i));
+    const {error} = await supabase.from("checklist").update({paid:newVal}).eq("id",item.id);
+    if(error) console.error("Checklist toggle error:",error.message);
   });
   const saveChecklistItem = withSync(async()=>{
     if(editingChecklistItem) {
@@ -257,8 +261,10 @@ export default function FinanceApp() {
       setChecklist(prev=>prev.map(i=>i.id===editingChecklistItem.id?{...i,...upd}:i));
     } else {
       const row = {name:form.name||"New Item", amount:+form.amount||0, paid:false, sort_order:checklist.length+1};
-      const {data} = await supabase.from("checklist").insert(row).select().single();
-      if(data) setChecklist(prev=>[...prev,data]);
+      const {data,error} = await supabase.from("checklist").insert(row).select().single();
+      if(error) console.error("Checklist insert error:",error.message);
+      // Always add to local state — use Supabase id if available, temp id otherwise
+      setChecklist(prev=>[...prev, data||{...row,id:Date.now()}]);
     }
     setModal(null); setForm({});
   });
