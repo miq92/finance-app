@@ -134,8 +134,11 @@ export default function FinanceApp() {
   const [evSessions, setEvSessions] = useState([]);
 
   // Settings
-  const [netIncome,      setNetIncome]      = useState(6240);
-  const [grossIncome,    setGrossIncome]    = useState(7500);
+  const [incomeSources,    setIncomeSources]    = useState([
+    { id:"main",  name:"Main Income", amount:6240, icon:"💼", color:"#6366f1" },
+    { id:"locum", name:"Locum",       amount:0,    icon:"🏥", color:"#22c55e" },
+  ]);
+  const [editingIncomeSource, setEditingIncomeSource] = useState(null);
   const [monthlyBudget,  setMonthlyBudget]  = useState(2400);
   const [tnbRate,        setTnbRate]        = useState(0.571);
   const [cutoffDay,      setCutoffDay]      = useState(17);
@@ -169,23 +172,24 @@ export default function FinanceApp() {
         {data:checkData,    error:e3},
         {data:evData,       error:e4},
         {data:settingsData, error:e5},
+        {data:incomeData,   error:e6},
       ] = await Promise.all([
         supabase.from("loans").select("*").order("id"),
         supabase.from("expenses").select("*").order("date",{ascending:false}),
         supabase.from("checklist").select("*").order("sort_order"),
         supabase.from("ev_sessions").select("*").order("id",{ascending:false}),
         supabase.from("settings").select("*"),
+        supabase.from("income_sources").select("*").order("sort_order"),
       ]);
-      const err = e1||e2||e3||e4||e5;
+      const err = e1||e2||e3||e4||e5||e6;
       if(err) throw err;
       setLoans(loansData||[]);
       setExpenses(expData||[]);
       setChecklist(checkData||[]);
       setEvSessions(evData||[]);
+      if(incomeData&&incomeData.length>0) setIncomeSources(incomeData);
       if(settingsData) {
         const s = Object.fromEntries(settingsData.map(r=>[r.key,r.value]));
-        if(s.net_income)     setNetIncome(+s.net_income);
-        if(s.gross_income)   setGrossIncome(+s.gross_income);
         if(s.monthly_budget) setMonthlyBudget(+s.monthly_budget);
         if(s.tnb_rate)       setTnbRate(+s.tnb_rate);
         if(s.cutoff_day)     setCutoffDay(+s.cutoff_day);
@@ -205,6 +209,7 @@ export default function FinanceApp() {
   }
 
   // ── Computed values ─────────────────────────────────────────────────────────
+  const netIncome  = incomeSources.reduce((s,i)=>s+Number(i.amount),0);
   const totalSpent = expenses.reduce((s,e)=>s+Number(e.amount),0);
   const paidCount  = checklist.filter(i=>i.paid).length;
   const totalLoans = loans.reduce((s,l)=>s+Number(l.total),0);
@@ -283,12 +288,26 @@ export default function FinanceApp() {
     setModal(null);
   });
 
-  // ── Settings save ───────────────────────────────────────────────────────────
-  const saveIncome = withSync(async()=>{
-    const ni=+form.netIncome||netIncome, gi=+form.grossIncome||grossIncome;
-    await Promise.all([saveSetting("net_income",ni), saveSetting("gross_income",gi)]);
-    setNetIncome(ni); setGrossIncome(gi); setModal(null);
+  // ── Income source actions ───────────────────────────────────────────────────
+  const saveIncomeSource = withSync(async()=>{
+    const row = { name:form.name||"Income", amount:+form.amount||0, icon:form.icon||"💼", color:form.color||"#6366f1", sort_order:form.sort_order||incomeSources.length+1 };
+    if(editingIncomeSource && typeof editingIncomeSource.id==="number") {
+      await supabase.from("income_sources").update(row).eq("id",editingIncomeSource.id);
+      setIncomeSources(prev=>prev.map(s=>s.id===editingIncomeSource.id?{...s,...row}:s));
+    } else {
+      const {data} = await supabase.from("income_sources").insert(row).select().single();
+      if(data) setIncomeSources(prev=>[...prev,data]);
+      else setIncomeSources(prev=>[...prev,{...row,id:Date.now()}]);
+    }
+    setModal(null); setForm({});
   });
+  const deleteIncomeSource = withSync(async(id)=>{
+    if(typeof id==="number") await supabase.from("income_sources").delete().eq("id",id);
+    setIncomeSources(prev=>prev.filter(s=>s.id!==id));
+    setModal(null);
+  });
+
+  // ── Settings save ───────────────────────────────────────────────────────────
   const saveBudget = withSync(async()=>{
     const mb=+form.monthlyBudget||monthlyBudget;
     await saveSetting("monthly_budget",mb);
@@ -368,21 +387,40 @@ export default function FinanceApp() {
         {/* ── DASHBOARD ── */}
         {tab==="dashboard" && (
           <div style={{padding:"16px 20px"}} className="fade-up">
+
+            {/* Multi-source Income Card */}
             <div style={{background:"linear-gradient(135deg,#1d4ed8,#4f46e5)",borderRadius:20,padding:"20px 24px",marginBottom:12,boxShadow:"0 8px 32px rgba(99,102,241,0.25)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                 <div>
-                  <p style={{fontSize:11,color:"#bfdbfe",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Net Income</p>
-                  <p style={{fontSize:28,fontWeight:800,color:"#fff"}}>RM {fmt(netIncome)}</p>
-                  <p style={{fontSize:12,color:"#bfdbfe",marginTop:4}}>May 2026</p>
+                  <p style={{fontSize:11,color:"#bfdbfe",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Total Net Income</p>
+                  <p style={{fontSize:30,fontWeight:800,color:"#fff"}}>RM {fmt(netIncome)}</p>
+                  <p style={{fontSize:12,color:"#bfdbfe",marginTop:4}}>May 2026 · {incomeSources.filter(s=>s.amount>0).length} active source{incomeSources.filter(s=>s.amount>0).length!==1?"s":""}</p>
                 </div>
-                <button onClick={()=>{setForm({netIncome,grossIncome});setModal("editIncome");}} style={{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 12px",color:"#fff",fontSize:12,cursor:"pointer"}}>✏️ Edit</button>
+                <button onClick={()=>setModal("manageIncome")} style={{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 12px",color:"#fff",fontSize:12,cursor:"pointer"}}>✏️ Edit</button>
+              </div>
+              {/* Per-source breakdown */}
+              <div style={{borderTop:"1px solid rgba(255,255,255,0.15)",paddingTop:12,display:"flex",flexDirection:"column",gap:8}}>
+                {incomeSources.map(src=>(
+                  <div key={src.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <span style={{fontSize:14}}>{src.icon}</span>
+                      <span style={{fontSize:13,color:"#bfdbfe"}}>{src.name}</span>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>RM {fmt(src.amount)}</span>
+                      <div style={{height:4,width:50,background:"rgba(255,255,255,0.15)",borderRadius:99}}>
+                        <div style={{height:"100%",width:`${netIncome>0?(src.amount/netIncome)*100:0}%`,background:"rgba(255,255,255,0.6)",borderRadius:99}}/>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
               <div style={{background:card,borderRadius:16,padding:"14px 16px",border:`1px solid ${border}`}}>
-                <p style={{fontSize:11,color:sub,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Gross Income</p>
-                <p style={{fontSize:16,fontWeight:700,color:text}}>RM {fmt(grossIncome)}</p>
-                <p style={{fontSize:10,color:sub,marginTop:4}}>Before deductions</p>
+                <p style={{fontSize:11,color:sub,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Committed</p>
+                <p style={{fontSize:16,fontWeight:700,color:"#f87171"}}>RM {fmt(loans.reduce((s,l)=>s+Number(l.monthly),0))}</p>
+                <p style={{fontSize:10,color:sub,marginTop:4}}>Loan repayments/mo</p>
               </div>
               <div style={{background:card,borderRadius:16,padding:"14px 16px",border:`1px solid ${border}`}}>
                 <p style={{fontSize:11,color:sub,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Remaining</p>
@@ -782,10 +820,59 @@ export default function FinanceApp() {
       </div>
 
       {/* ── MODALS ── */}
-      <Modal open={modal==="editIncome"} onClose={()=>setModal(null)} title="Edit Income" dark={d}>
-        <Input label="Net Income (after EPF, SOCSO)" value={form.netIncome||""} onChange={e=>setForm(p=>({...p,netIncome:e.target.value}))} type="number" prefix="RM" dark={d}/>
-        <Input label="Gross Income (before deductions)" value={form.grossIncome||""} onChange={e=>setForm(p=>({...p,grossIncome:e.target.value}))} type="number" prefix="RM" dark={d}/>
-        <Btn onClick={saveIncome} dark={d}>Save Changes</Btn>
+
+      {/* Manage Income Sources */}
+      <Modal open={modal==="manageIncome"} onClose={()=>setModal(null)} title="Income Sources" dark={d}>
+        <p style={{fontSize:12,color:sub,marginBottom:14}}>Tap a source to edit · Total: <strong style={{color:text}}>RM {fmt(netIncome)}</strong></p>
+        {incomeSources.map(src=>(
+          <div key={src.id} onClick={()=>{setEditingIncomeSource(src);setForm({...src});setModal("editIncomeSource");}}
+            style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:d?"#1e293b":"#f8fafc",borderRadius:14,marginBottom:10,cursor:"pointer",border:`1px solid ${border}`}}>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <div style={{width:36,height:36,borderRadius:10,background:src.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{src.icon}</div>
+              <div>
+                <p style={{fontSize:14,fontWeight:600,color:text}}>{src.name}</p>
+                <p style={{fontSize:11,color:sub}}>{Number(src.amount)>0?`RM ${fmt(src.amount)}/month`:"Not set"}</p>
+              </div>
+            </div>
+            <span style={{fontSize:16,color:sub}}>›</span>
+          </div>
+        ))}
+        <button onClick={()=>{setEditingIncomeSource(null);setForm({name:"",amount:"",icon:"💵",color:"#6366f1",sort_order:incomeSources.length+1});setModal("editIncomeSource");}}
+          style={{width:"100%",background:"linear-gradient(135deg,#6366f1,#7c3aed)",border:"none",borderRadius:14,padding:"13px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",marginTop:4,fontFamily:"Sora,sans-serif"}}>
+          + Add Income Source
+        </button>
+      </Modal>
+
+      {/* Add / Edit single Income Source */}
+      <Modal open={modal==="editIncomeSource"} onClose={()=>setModal(null)} title={editingIncomeSource?"Edit Source":"Add Source"} dark={d}>
+        <Input label="Source Name" value={form.name||""} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Locum, Freelance, Rental…" dark={d}/>
+        <Input label="Monthly Amount" value={form.amount||""} onChange={e=>setForm(p=>({...p,amount:e.target.value}))} type="number" step="0.01" prefix="RM" dark={d}/>
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:12,color:d?"#94a3b8":"#64748b",display:"block",marginBottom:8,fontWeight:600}}>Icon</label>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {["💼","🏥","💊","🏠","🚗","💻","📦","💵","🎓","🛒"].map(ic=>(
+              <button key={ic} onClick={()=>setForm(p=>({...p,icon:ic}))} style={{width:40,height:40,borderRadius:10,border:`2px solid ${form.icon===ic?"#7c3aed":border}`,background:form.icon===ic?"#7c3aed22":"transparent",fontSize:18,cursor:"pointer"}}>{ic}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={{fontSize:12,color:d?"#94a3b8":"#64748b",display:"block",marginBottom:8,fontWeight:600}}>Colour</label>
+          <div style={{display:"flex",gap:8}}>
+            {["#6366f1","#22c55e","#f97316","#3b82f6","#ec4899","#eab308","#8b5cf6"].map(c=>(
+              <div key={c} onClick={()=>setForm(p=>({...p,color:c}))} style={{width:28,height:28,borderRadius:99,background:c,cursor:"pointer",border:form.color===c?"3px solid #fff":"3px solid transparent",transition:"border 0.2s"}}/>
+            ))}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Btn onClick={()=>setModal("manageIncome")} variant="secondary" dark={d}>Back</Btn>
+          <Btn onClick={saveIncomeSource} dark={d}>Save</Btn>
+        </div>
+        {editingIncomeSource&&(
+          <button onClick={()=>deleteIncomeSource(editingIncomeSource.id)}
+            style={{width:"100%",marginTop:10,background:"transparent",border:"1px solid #ef4444",borderRadius:14,padding:12,color:"#ef4444",fontSize:14,cursor:"pointer",fontFamily:"Sora,sans-serif"}}>
+            🗑 Remove Source
+          </button>
+        )}
       </Modal>
       <Modal open={modal==="editBudget"} onClose={()=>setModal(null)} title="Edit Monthly Budget" dark={d}>
         <Input label="Monthly Budget" value={form.monthlyBudget||""} onChange={e=>setForm(p=>({...p,monthlyBudget:e.target.value}))} type="number" prefix="RM" dark={d}/>
