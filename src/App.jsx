@@ -269,9 +269,16 @@ export default function FinanceApp() {
   });
 
   // ── EV actions ──────────────────────────────────────────────────────────────
+  const formatEvDate = (iso) => {
+    if(!iso) return "Today";
+    // If already a display string like "26 Apr", return as-is
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+    return new Date(iso).toLocaleDateString("en-MY",{day:"numeric",month:"short",year:"numeric"});
+  };
   const saveEvSession = withSync(async()=>{
+    const displayDate = formatEvDate(form.date);
     const row = {
-      date:form.date||"Today",
+      date: displayDate,
       kwh:+form.kwh||0,
       rate:+form.rate||0,
       cost:(+form.kwh||0)*(+form.rate||0),
@@ -655,7 +662,7 @@ export default function FinanceApp() {
                 </div>
                 <button onClick={()=>{
                   setEditingSession(null);
-                  setForm({date:"",kwh:"",rate:lastRate||"",charger:"",duration:"",type:"DC"});
+                  setForm({date:new Date().toISOString().slice(0,10),kwh:"",rate:lastRate||"",charger:"",duration:"",type:"DC"});
                   setModal("evSession");
                 }} style={{background:"linear-gradient(135deg,#6366f1,#7c3aed)",border:"none",borderRadius:12,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add</button>
               </div>
@@ -681,7 +688,7 @@ export default function FinanceApp() {
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                       <span style={{fontWeight:700,fontSize:14,color:"#a5b4fc"}}>RM {fmt(Number(s.cost||0))}</span>
-                      <button onClick={()=>{setEditingSession(s);setForm({...s});setModal("evSession");}} style={{background:d?"#1e293b":"#f1f5f9",border:"none",borderRadius:8,width:28,height:28,cursor:"pointer",fontSize:12}}>✏️</button>
+                      <button onClick={()=>{setEditingSession(s);setForm({...s, date:new Date().toISOString().slice(0,10)});setModal("evSession");}} style={{background:d?"#1e293b":"#f1f5f9",border:"none",borderRadius:8,width:28,height:28,cursor:"pointer",fontSize:12}}>✏️</button>
                     </div>
                   </div>
                 </div>
@@ -942,7 +949,12 @@ export default function FinanceApp() {
         <Btn onClick={saveEvSettings} dark={d}>Save Settings</Btn>
       </Modal>
       <Modal open={modal==="evSession"} onClose={()=>setModal(null)} title={editingSession?"Edit Session":"Log Session"} dark={d}>
-        <Input label="Date (e.g. 26 Apr)" value={form.date||""} onChange={e=>setForm(p=>({...p,date:e.target.value}))} dark={d}/>
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:12,color:d?"#94a3b8":"#64748b",display:"block",marginBottom:6,fontWeight:600}}>Date</label>
+          <input type="date" value={form.date||new Date().toISOString().slice(0,10)}
+            onChange={e=>setForm(p=>({...p,date:e.target.value}))}
+            style={{width:"100%",background:d?"#1e293b":"#f8fafc",border:`1px solid ${d?"#334155":"#e2e8f0"}`,borderRadius:12,padding:"12px",fontSize:15,color:d?"#f1f5f9":"#0f172a",fontFamily:"Sora,sans-serif",outline:"none",cursor:"pointer",colorScheme:d?"dark":"light"}}/>
+        </div>
         <Input label="Charger Name / Location" value={form.charger||""} onChange={e=>setForm(p=>({...p,charger:e.target.value}))} placeholder="e.g. ChargEV KLCC, TNB DCFC Bangsar…" dark={d}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <Input label="Energy (kWh)" value={form.kwh||""} onChange={e=>setForm(p=>({...p,kwh:e.target.value}))} type="number" step="0.1" dark={d}/>
