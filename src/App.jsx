@@ -164,22 +164,32 @@ export default function FinanceApp() {
 
   // ── Auto-reset checklist on new month ───────────────────────────────────────
   useEffect(()=>{
-    if(checklist.length === 0) return; // Don't run before data loads
+    if(checklist.length === 0) return; // Wait until data is loaded
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${now.getMonth()+1}`;
     const lastResetKey = "checklist_last_reset";
     const lastReset = localStorage.getItem(lastResetKey);
+
+    if(!lastReset) {
+      // First time ever — just record current month, don't reset anything
+      localStorage.setItem(lastResetKey, currentMonth);
+      return;
+    }
+
     if(lastReset !== currentMonth) {
-      // New month detected — reset all paid items to unpaid
+      // Genuine new month — reset all paid to false
       const resetAll = async () => {
-        const {error} = await supabase.from("checklist").update({paid:false}).neq("id",0);
-        if(error) console.error("Auto-reset error:",error.message);
-        setChecklist(prev=>prev.map(i=>({...i,paid:false})));
+        const {error} = await supabase
+          .from("checklist")
+          .update({paid:false})
+          .eq("paid", true); // Only update rows that are actually paid
+        if(error) console.error("Auto-reset error:", error.message);
+        setChecklist(prev=>prev.map(i=>({...i, paid:false})));
         localStorage.setItem(lastResetKey, currentMonth);
       };
       resetAll();
     }
-  },[checklist.length > 0]);
+  }, [checklist.length]); // Re-run when checklist loads
 
   async function loadAll() {
     setLoading(true); setDbError(null);
