@@ -280,11 +280,19 @@ export default function FinanceApp() {
       type:form.type||"AC"
     };
     if(editingSession) {
-      await supabase.from("ev_sessions").update(row).eq("id",editingSession.id);
+      const {error} = await supabase.from("ev_sessions").update(row).eq("id",editingSession.id);
+      if(error) console.error("EV update error:",error.message);
+      // Always update local state regardless of Supabase result
       setEvSessions(prev=>prev.map(s=>s.id===editingSession.id?{...s,...row}:s));
     } else {
-      const {data} = await supabase.from("ev_sessions").insert(row).select().single();
-      if(data) setEvSessions(prev=>[data,...prev]);
+      const {data, error} = await supabase.from("ev_sessions").insert(row).select().single();
+      if(error) {
+        console.error("EV insert error:",error.message);
+        // Fallback: save to local state with temp id so user sees it immediately
+        setEvSessions(prev=>[{...row, id:Date.now()},...prev]);
+      } else if(data) {
+        setEvSessions(prev=>[data,...prev]);
+      }
     }
     setModal(null); setForm({});
   });
